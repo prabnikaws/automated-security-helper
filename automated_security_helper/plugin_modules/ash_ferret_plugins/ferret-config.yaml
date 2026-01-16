@@ -1,0 +1,264 @@
+# Ferret Scanner Configuration File
+# This file defines default settings and profiles for different scanning scenarios
+
+# Default settings applied when no profile is specified
+defaults:
+  format: text # Output format: text, json, csv, yaml, junit
+  confidence_levels: all # Confidence levels to display: high, medium, low, or combinations
+  checks: all # Specific checks to run: CREDIT_CARD, PASSPORT, METADATA, INTELLECTUAL_PROPERTY, SSN, SECRETS, EMAIL, PHONE, IP_ADDRESS, or combinations
+  # GENAI_DISABLED: COMPREHEND_PII also available with --enable-genai
+  verbose: false # Display detailed information for each finding
+  debug: false # Enable debug logging to show preprocessing and validation flow
+  no_color: false # Disable colored output
+  recursive: false # Recursively scan directories
+  enable_preprocessors: true # Enable text extraction from documents (PDF, Office files)
+  show_match: false # Display the actual matched text in findings
+  quiet: false # Suppress progress output (useful for scripts and CI/CD)
+  show_suppressed: false # Include suppressed findings in output with suppression details
+  generate_suppressions: false # Generate suppression rules for all findings
+  # GENAI_DISABLED: max_cost: 0                 # Maximum cost limit for GenAI services (0 = no limit)
+  # GENAI_DISABLED: estimate_only: false        # Show cost estimate and exit without processing
+
+# Preprocessor configurations
+preprocessors:
+  # Text extraction from documents
+  text_extraction:
+    enabled: true # Enable text extraction preprocessor
+    types: # Types of text extraction to perform
+      - pdf # Extract text from PDF documents
+      - office # Extract text from Office documents (DOCX, XLSX, PPTX, ODT, ODS, ODP)
+
+# Redaction configurations
+redaction:
+  enabled: false # Enable redaction of sensitive data (can be overridden with --enable-redaction)
+  output_dir: "./redacted" # Directory where redacted files will be stored
+  strategy: "format_preserving" # Default redaction strategy: simple, format_preserving, or synthetic
+  audit_log_file: "" # Path to save redaction audit log file (JSON format for compliance)
+  memory_scrub: true # Enable secure memory scrubbing after processing sensitive data
+  audit_trail: true # Enable audit trail generation for redaction operations
+
+  # Strategy-specific configurations
+  strategies:
+    simple:
+      replacement: "[REDACTED]" # Text to replace sensitive data with
+    format_preserving:
+      preserve_length: true # Maintain original text length
+      preserve_format: true # Maintain original text format (e.g., XXX-XX-XXXX for SSN)
+    synthetic:
+      secure: true # Use cryptographically secure synthetic data generation
+
+# Validator-specific configurations
+validators:
+  # Intellectual property validator configuration
+  intellectual_property:
+    internal_urls:
+      # Cloud Infrastructure Patterns
+      - "http[s]?:\\/\\/s3\\.amazonaws\\.com"
+      - "http[s]?:\\/\\/.*\\.s3\\.amazonaws\\.com"
+      - "http[s]?:\\/\\/.*\\.s3-.*\\.amazonaws\\.com"
+      # Amazon/AWS Internal Infrastructure Patterns
+      - "w\\.amazon\\.com"
+      - "(.*\\.)?aws\\.dev"
+      - "(.*\\.)?amazon\\.dev"
+      - "(.*\\.)?a2z\\.com"
+      - "isengard\\.amazon\\.com"
+      - "(.*\\.)?corp\\.amazon\\.com"
+      - "river\\.amazon\\.com"
+      - "issues\\.amazon\\.com"
+      - "hack\\.amazon\\.com"
+      - "(.*\\.)?pulse\\.aws"
+      - "admin\\.jam\\.awsevents\\.com"
+      - "proservecrm\\.my\\.salesforce\\.com"
+      - "(.*\\.)?aws-border\\.cn"
+      - "(.*\\.)?aws-border\\.com"
+      - "(.*\\.)?awsc-integ\\.aws\\.amazon\\.com"
+      - "(.*\\.)?a2z\\.org\\.cn"
+      - "(.*\\.)?amazon\\.enterprise\\..*"
+      # Corporate Network Patterns
+      - "http[s]?:\\/\\/.*\\.internal\\..*"
+      - "http[s]?:\\/\\/.*\\.corp\\..*"
+      - "http[s]?:\\/\\/.*-internal\\..*"
+      - "http[s]?:\\/\\/.*internal-.*"
+
+    # Custom intellectual property patterns
+    intellectual_property_patterns:
+      patent: "\\b(US|EP|JP|CN|WO)[ -]?(\\d{1,3}[,.]?\\d{3}[,.]?\\d{3}|\\d{1,3}[,.]?\\d{3}[,.]?\\d{2}[A-Z]\\d?)\\b"
+      trademark: "\\b(\\w+\\s*[™®]|\\w+\\s*\\(TM\\)|\\w+\\s*\\(R\\)|\\w+\\s+Trademark|\\w+\\s+Registered\\s+Trademark)\\b"
+      copyright: "(©|\\(c\\)|\\(C\\)|Copyright|\\bCopyright\\b)\\s*\\d{4}[-,]?(\\d{4})?\\s+[A-Za-z0-9\\s\\.,]+"
+      trade_secret: "\\b(Confidential|Trade\\s+Secret|Proprietary|Company\\s+Confidential|Internal\\s+Use\\s+Only|Restricted|Classified)\\b"
+
+  social_media:
+    platform_patterns:
+      linkedin:
+        - "(?i)https?://(?:www\\.)?linkedin\\.com/in/[a-zA-Z0-9_-]+"
+        - "(?i)https?://(?:www\\.)?linkedin\\.com/company/[a-zA-Z0-9_-]+"
+        - "(?i)https?://(?:www\\.)?linkedin\\.com/pub/[a-zA-Z0-9_/-]+"
+        - "(?i)linkedin\\.com/in/[a-zA-Z0-9_-]+"
+      twitter:
+        - "(?i)https?://(?:www\\.)?(twitter|x)\\.com/[a-zA-Z0-9_]+"
+        - "(?i)(?<!\\w)@[a-zA-Z0-9_]{1,15}(?!@|\\.[a-zA-Z])"
+        - "(?i)(twitter|x)\\.com/[a-zA-Z0-9_]+"
+      facebook:
+        - "(?i)https?://(?:www\\.)?(facebook|fb)\\.com/[a-zA-Z0-9._-]+"
+        - "(?i)https?://(?:www\\.)?facebook\\.com/profile\\.php\\?id=\\d+"
+        - "(?i)(facebook|fb)\\.com/[a-zA-Z0-9._-]+"
+      instagram:
+        - "(?i)https?://(?:www\\.)?instagram\\.com/[a-zA-Z0-9_.]+/"
+        - "(?i)https?://(?:www\\.)?instagr\\.am/[a-zA-Z0-9_.]+/"
+        - "(?i)instagram\\.com/[a-zA-Z0-9_.]+/"
+      youtube:
+        - "(?i)https?://(?:www\\.)?youtube\\.com/(?:user|c|channel)/[a-zA-Z0-9_-]+"
+        - "(?i)https?://(?:www\\.)?youtube\\.com/@[a-zA-Z0-9_-]+"
+        - "(?i)https?://(?:www\\.)?youtu\\.be/[a-zA-Z0-9_-]+"
+        - "(?i)youtube\\.com/(?:user|c|channel)/[a-zA-Z0-9_-]+"
+      tiktok:
+        - "(?i)https?://(?:www\\.)?tiktok\\.com/@[a-zA-Z0-9_.]+/"
+        - "(?i)https?://(?:www\\.)?tiktok\\.com/t/[a-zA-Z0-9]+"
+        - "(?i)tiktok\\.com/@[a-zA-Z0-9_.]+/"
+
+    positive_keywords:
+      - "profile"
+      - "social media"
+      - "follow me"
+      - "connect with me"
+      - "find me on"
+      - "professional"
+      - "networking"
+
+    negative_keywords:
+      - "example"
+      - "test"
+      - "placeholder"
+      - "demo"
+      - "sample"
+      - "documentation"
+      - "tutorial"
+
+# Suppression configuration
+suppressions:
+  file: ".ferret-scan-suppressions.yaml"
+  generate_on_scan: false
+  show_suppressed: false
+
+# Profiles for different scanning scenarios
+profiles:
+  quick:
+    format: text
+    confidence_levels: high
+    checks: CREDIT_CARD,SECRETS,SSN,EMAIL
+    verbose: false
+    no_color: false
+    recursive: false
+    quiet: true
+    show_match: false
+    enable_preprocessors: false
+    description: "Quick scan focusing on critical data types with minimal processing"
+
+  thorough:
+    format: text
+    confidence_levels: all
+    checks: all
+    verbose: true
+    no_color: false
+    recursive: true
+    enable_preprocessors: true
+    description: "Thorough scan with all confidence levels, recursive scanning, and text extraction"
+
+  ci:
+    format: junit
+    confidence_levels: high,medium
+    checks: all
+    verbose: true
+    no_color: true
+    recursive: true
+    enable_preprocessors: true
+    quiet: true
+    show_suppressed: false
+    generate_suppressions: false
+    description: "CI/CD pipeline profile with JUnit XML output for test result integration"
+
+  security-audit:
+    format: json
+    confidence_levels: medium,high
+    checks: SECRETS,CREDIT_CARD,SSN,PASSPORT,INTELLECTUAL_PROPERTY
+    verbose: true
+    no_color: true
+    recursive: true
+    enable_preprocessors: true
+    show_match: false
+    quiet: false
+    description: "Security-focused scan for audit and compliance purposes"
+
+  comprehensive:
+    format: yaml
+    confidence_levels: all
+    checks: all
+    verbose: true
+    no_color: false
+    recursive: true
+    enable_preprocessors: true
+    show_match: true
+    show_suppressed: true
+    generate_suppressions: false
+    description: "Comprehensive scan with all features and suppression support"
+
+  credit-card:
+    format: text
+    confidence_levels: all
+    checks: CREDIT_CARD
+    verbose: true
+    no_color: false
+    recursive: true
+    description: "Scan only for credit card numbers"
+
+  passport:
+    format: text
+    confidence_levels: all
+    checks: PASSPORT
+    verbose: true
+    no_color: false
+    recursive: true
+    description: "Scan only for passport numbers"
+
+  intellectual-property:
+    format: text
+    confidence_levels: all
+    checks: INTELLECTUAL_PROPERTY
+    verbose: true
+    no_color: false
+    recursive: true
+    description: "Scan only for intellectual property references"
+
+  json-api:
+    format: json
+    confidence_levels: all
+    checks: all
+    verbose: true
+    no_color: true
+    recursive: true
+    enable_preprocessors: true
+    show_match: true
+    description: "Structured JSON output for APIs and programmatic processing"
+
+  csv-export:
+    format: csv
+    confidence_levels: all
+    checks: all
+    verbose: false
+    no_color: true
+    recursive: true
+    enable_preprocessors: true
+    quiet: true
+    description: "CSV format for spreadsheet analysis and reporting"
+
+  silent:
+    format: json
+    confidence_levels: high
+    checks: all
+    verbose: false
+    no_color: true
+    recursive: true
+    enable_preprocessors: true
+    quiet: true
+    show_suppressed: false
+    description: "Silent operation for automated systems and scripts"

@@ -1,0 +1,433 @@
+# ASH Ferret Scan Plugin
+
+This plugin integrates [Ferret Scan](https://github.com/awslabs/ferret-scan) with the Automated Security Helper (ASH) to provide comprehensive sensitive data detection for source code and documents.
+
+## Overview
+
+The Ferret Scan plugin enables ASH to leverage Ferret's powerful sensitive data detection capabilities for:
+
+- **Credit Card Detection**: 15+ card brands with mathematical validation (Luhn algorithm)
+- **Passport Numbers**: Multi-country formats including US, UK, Canada, EU, and MRZ
+- **Social Security Numbers**: Domain-aware validation with HR/Tax/Healthcare context
+- **API Keys & Secrets**: 40+ patterns including AWS, GitHub, Google Cloud, Stripe, and more
+- **Email Addresses**: RFC-compliant with domain validation
+- **Phone Numbers**: International and domestic formats
+- **IP Addresses**: IPv4 and IPv6 with network context
+- **Social Media Profiles**: LinkedIn, Twitter/X, Facebook, GitHub, Instagram, TikTok
+- **Intellectual Property**: Patents, trademarks, copyrights, trade secrets
+- **Document Metadata**: EXIF and document metadata extraction
+
+## Prerequisites
+
+### Install Ferret Scan
+
+The plugin requires Ferret Scan to be installed and available in your system PATH.
+
+**pip (Recommended)**:
+```bash
+pip install ferret-scan
+```
+
+**Build from Source**:
+```bash
+git clone https://github.com/awslabs/ferret-scan.git
+cd ferret-scan
+make build
+```
+
+### Verify Installation
+
+```bash
+ferret-scan --version
+ferret-scan --help
+```
+
+## Quick Start
+
+### Basic Configuration
+
+Ferret Scan plugin is not included by default with ASH. Include the plugin module in your `.ash/.ash.yaml` configuration file:
+
+```yaml
+ash_plugin_modules:
+  - automated_security_helper.plugin_modules.ash_ferret_plugins
+```
+
+Add scanner configuration:
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+```
+
+### Run Ferret Scan
+
+```bash
+# Scan current directory
+uv run ash --scanners ferret-scan
+
+# Scan specific directory
+uv run ash --source-dir /path/to/project --scanners ferret-scan
+```
+
+### Run Without Configuration File
+
+If you want to run Ferret Scan without saving a configuration file:
+
+```bash
+# Scan current directory only with ferret-scan
+uv run ash --scanners ferret-scan \
+  --config-overrides "ash_plugin_modules+=[\"automated_security_helper.plugin_modules.ash_ferret_plugins\"]"
+
+# Scan with all available scanners (including ferret-scan)
+uv run ash --config-overrides "ash_plugin_modules+=[\"automated_security_helper.plugin_modules.ash_ferret_plugins\"]"
+```
+
+## Configuration Options
+
+### Basic Options
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      confidence_levels: "all"    # high, medium, low, or combinations
+      checks: "all"               # Specific checks to run
+      recursive: true             # Recursively scan directories
+```
+
+### Configuration Options Reference
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `confidence_levels` | string | `"all"` | Confidence levels: `high`, `medium`, `low`, or combinations like `high,medium` |
+| `checks` | string | `"all"` | Specific checks to run (comma-separated) |
+| `recursive` | bool | `true` | Recursively scan directories |
+| `config_file` | string | `null` | Path to custom Ferret YAML config file |
+| `use_default_config` | bool | `true` | Use the default config bundled with this plugin |
+| `profile` | string | `null` | Profile name from config file |
+| `exclude_patterns` | list | `[]` | Glob patterns to exclude |
+| `no_color` | bool | `true` | Disable colored output |
+| `quiet` | bool | `false` | Minimal output mode |
+
+### Available Checks
+
+- `CREDIT_CARD` - Credit card numbers (Visa, MasterCard, Amex, etc.)
+- `EMAIL` - Email addresses
+- `INTELLECTUAL_PROPERTY` - Patents, trademarks, copyrights
+- `IP_ADDRESS` - IPv4 and IPv6 addresses
+- `METADATA` - Document and image metadata
+- `PASSPORT` - Passport numbers (multi-country)
+- `PERSON_NAME` - Person names
+- `PHONE` - Phone numbers
+- `SECRETS` - API keys, tokens, passwords
+- `SOCIAL_MEDIA` - Social media profiles
+- `SSN` - Social Security Numbers
+
+### Advanced Configuration
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      confidence_levels: "high,medium"
+      checks: "CREDIT_CARD,SECRETS,SSN,PASSPORT"
+      recursive: true
+      profile: "security-audit"
+      config_file: "my-ferret-config.yaml"
+      exclude_patterns:
+        - "*.log"
+        - "node_modules/**"
+        - "vendor/**"
+        - ".git/**"
+      quiet: false
+      no_color: true
+```
+
+## Default Configuration
+
+This plugin includes a bundled `ferret-config.yaml` that is automatically used when no custom config is specified. The default config includes:
+
+- Comprehensive validator patterns for intellectual property detection
+- Social media platform detection patterns (LinkedIn, Twitter, Facebook, etc.)
+- Pre-configured profiles for common use cases
+- AWS/Amazon internal URL patterns for IP detection
+
+### Available Profiles
+
+The default configuration includes these pre-defined profiles:
+
+| Profile | Description |
+|---------|-------------|
+| `quick` | Fast security check (high confidence only) |
+| `thorough` | All confidence levels with text extraction |
+| `ci` | CI/CD integration (JUnit XML output) |
+| `security-audit` | Security team scanning (JSON output) |
+| `comprehensive` | Complete analysis (YAML output) |
+| `credit-card` | PCI compliance focused |
+| `passport` | Identity verification focused |
+| `intellectual-property` | IP detection focused |
+| `json-api` | Structured JSON for APIs |
+| `csv-export` | CSV for spreadsheet analysis |
+| `silent` | Minimal output for automation |
+
+### Using Profiles
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      profile: "security-audit"
+```
+
+## Overriding Default Configuration
+
+### Option 1: Custom Config File Path
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      config_file: "/path/to/your/custom-ferret.yaml"
+```
+
+### Option 2: Config File in Source Directory
+
+The plugin searches for config files in this order:
+1. Explicitly specified `config_file` path
+2. `ferret.yaml` or `.ferret.yaml` in the source directory
+3. `.ash/ferret.yaml` or `.ash/ferret-scan.yaml` in the source directory
+4. Default config bundled with this plugin
+
+Simply create a `ferret.yaml` or `.ferret.yaml` in your project root to override the defaults.
+
+### Option 3: Disable Default Config
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      use_default_config: false  # Use ferret-scan's built-in defaults only
+```
+
+### Creating a Custom Config File
+
+Copy the default config from the plugin:
+
+```bash
+cp $(python -c "import automated_security_helper.plugin_modules.ash_ferret_plugins as p; print(p.__path__[0])")/ferret-config.yaml ./my-ferret-config.yaml
+```
+
+Or create a minimal config that only overrides what you need:
+
+```yaml
+# my-ferret-config.yaml
+defaults:
+  confidence_levels: high,medium
+  checks: SECRETS,CREDIT_CARD,SSN
+
+validators:
+  intellectual_property:
+    internal_urls:
+      - "http[s]?:\\/\\/.*\\.mycompany\\.com"
+      - "http[s]?:\\/\\/internal\\..*"
+```
+
+## Usage Examples
+
+### High Confidence Findings Only
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      confidence_levels: "high"
+```
+
+### PCI Compliance Scan
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      checks: "CREDIT_CARD"
+      confidence_levels: "all"
+      profile: "credit-card"
+```
+
+### Secrets Detection Only
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      checks: "SECRETS"
+      confidence_levels: "high,medium"
+```
+
+### Combined with Other Scanners
+
+```bash
+# Use Ferret Scan alongside other ASH scanners
+uv run ash --scanners ferret-scan,bandit,detect-secrets
+```
+
+### CI/CD Integration
+
+```bash
+# Run in container mode for CI/CD
+uv run ash --mode container --scanners ferret-scan
+```
+
+## Output Integration
+
+Ferret Scan results are integrated into ASH's unified reporting system:
+
+- **SARIF Format**: Machine-readable results for CI/CD integration
+- **HTML Reports**: Visual security dashboard with remediation guidance
+- **JSON/CSV**: Structured data for analysis and tracking
+- **Markdown**: Human-readable summaries for pull requests
+
+Results are written to:
+```
+.ash/ash_output/
+├── scanners/
+│   └── ferret-scan/
+│       └── source/
+│           └── ferret-scan.sarif
+└── reports/
+    └── ash.sarif  # Aggregated results
+```
+
+## Troubleshooting
+
+### Common Issues
+
+**Ferret Scan not found**:
+```bash
+# Check if ferret-scan is in PATH
+which ferret-scan
+
+# Install if missing
+pip install ferret-scan
+```
+
+**Empty directory warnings**:
+The plugin will skip scanning if the target directory is empty or doesn't exist, logging an appropriate warning message.
+
+**No findings in output**:
+```bash
+# Check if ferret-scan works directly
+ferret-scan --format sarif --file /path/to/test/file
+```
+
+### Debug Mode
+
+Enable verbose logging to troubleshoot issues:
+
+```bash
+uv run ash --scanners ferret-scan --log-level DEBUG
+```
+
+## Integration Examples
+
+### Pre-commit Hook
+
+```yaml
+# .pre-commit-config.yaml
+repos:
+  - repo: local
+    hooks:
+      - id: ash-ferret-scan
+        name: ASH Ferret Scan Sensitive Data Detection
+        entry: uv run ash --scanners ferret-scan --mode precommit
+        language: system
+        pass_filenames: false
+```
+
+### GitHub Actions
+
+```yaml
+# .github/workflows/security.yml
+name: Security Scan
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies
+        run: |
+          pip install ferret-scan
+          pip install uv
+      - name: Run ASH with Ferret Scan
+        run: |
+          uv run ash --scanners ferret-scan --output-format sarif \
+            --config-overrides "ash_plugin_modules+=[\"automated_security_helper.plugin_modules.ash_ferret_plugins\"]"
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: .ash/ash_output/reports/ash.sarif
+```
+
+### GitLab CI
+
+```yaml
+# .gitlab-ci.yml
+ferret-security-scan:
+  stage: test
+  image: python:3.11
+  before_script:
+    - pip install ferret-scan uv
+  script:
+    - uv run ash --scanners ferret-scan \
+        --config-overrides "ash_plugin_modules+=[\"automated_security_helper.plugin_modules.ash_ferret_plugins\"]"
+  artifacts:
+    reports:
+      sast: .ash/ash_output/reports/ash.sarif
+```
+
+## Comparison with detect-secrets
+
+| Feature | Ferret Scan | detect-secrets |
+|---------|-------------|----------------|
+| Credit Cards | ✅ 15+ brands with Luhn | ❌ |
+| Passports | ✅ Multi-country + MRZ | ❌ |
+| SSN | ✅ Domain-aware | ❌ |
+| API Keys | ✅ 40+ patterns | ✅ Multiple patterns |
+| High Entropy | ❌ | ✅ |
+| Social Media | ✅ | ❌ |
+| IP Detection | ✅ | ❌ |
+| Document Metadata | ✅ EXIF extraction | ❌ |
+
+Consider using both scanners together for comprehensive coverage:
+```bash
+uv run ash --scanners ferret-scan,detect-secrets
+```
+
+## Documentation
+
+For comprehensive documentation and advanced configuration options, see:
+- [Ferret Scan GitHub Repository](https://github.com/awslabs/ferret-scan)
+- [ASH Plugin Development Guide](../index.md)
+- [ASH Scanner Plugins](../scanner-plugins.md)
+
+## Support
+
+- **ASH Issues**: [GitHub Issues](https://github.com/awslabs/automated-security-helper/issues)
+- **Ferret Scan Issues**: [GitHub Issues](https://github.com/awslabs/ferret-scan/issues)
+- **Community**: [ASH Discussions](https://github.com/awslabs/automated-security-helper/discussions)
