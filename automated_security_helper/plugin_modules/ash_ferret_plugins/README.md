@@ -42,16 +42,46 @@ ash_plugin_modules:
   - automated_security_helper.plugin_modules.ash_ferret_plugins
 ```
 
+## ASH Convention Compliance
+
+This plugin follows ASH conventions for consistent behavior across all scanners:
+
+### Inherited from ASH (Do NOT configure at plugin level)
+
+| Feature | ASH Convention | Notes |
+|---------|---------------|-------|
+| **Debug Mode** | `ash --debug` | Automatically passed to ferret-scan when ASH is in debug mode |
+| **Verbose Mode** | `ash --verbose` | Automatically passed to ferret-scan when ASH is in verbose mode |
+| **Output Format** | Always SARIF | Required by ASH for result aggregation |
+| **Output Directory** | `.ash/ash_output/scanners/ferret-scan/` | Follows ASH conventions |
+| **Offline Mode** | `ASH_OFFLINE=true` | Respects ASH offline mode environment variable |
+| **Suppressions** | `.ash/suppressions.yaml` | Managed centrally by ASH |
+
+### Unsupported Options
+
+The following ferret-scan CLI options are **NOT supported** in the ASH plugin and will raise an error if used:
+
+| Option | Reason |
+|--------|--------|
+| `format` | ASH requires SARIF format. Use ASH reporter plugins for other formats. |
+| `debug` | Inherited from ASH's global `--debug` flag. |
+| `verbose` | Inherited from ASH's global `--verbose` flag. |
+| `web`, `port` | Web server mode is not applicable for ASH integration. |
+| `enable_redaction`, `redaction_*` | Redaction is post-processing, not scanning. |
+| `generate_suppressions`, `show_suppressed` | ASH manages suppressions centrally. |
+| `extract_text` | Text extraction mode is a utility, not scanning. |
+
+### Security Warning: show_match Option
+
+⚠️ **Data Exfiltration Risk**: The `show_match` option causes ferret-scan to include the actual matched sensitive data (credit card numbers, SSNs, API keys, etc.) in the scan output. This creates significant security risks:
+
+- **Log file exposure**: Matched sensitive data will appear in SARIF reports, CI/CD logs, and ASH output files
+- **Accidental data leakage**: Reports shared with team members or uploaded to security dashboards may contain real sensitive data
+- **Compliance violations**: Logging actual PII/PCI data may violate data protection regulations (GDPR, PCI-DSS, HIPAA)
+
+**Recommendation**: Keep `show_match: false` (the default) in production environments. Only enable it temporarily for debugging in isolated, secure environments where log files are properly protected and purged.
+
 ## Configuration
-
-### Default Configuration
-
-This plugin includes a default `ferret-config.yaml` that is automatically used when no custom config is specified. The default config includes:
-
-- Comprehensive validator patterns for intellectual property detection
-- Social media platform detection patterns
-- Pre-configured profiles for common use cases (quick, thorough, ci, security-audit, etc.)
-- AWS/Amazon internal URL patterns for IP detection
 
 ### Basic Configuration
 
@@ -64,6 +94,31 @@ scanners:
       checks: "all"             # or specific: CREDIT_CARD,EMAIL,SECRETS
       recursive: true
 ```
+
+### Configuration Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `confidence_levels` | string | `"all"` | Confidence levels: `high`, `medium`, `low`, or combinations |
+| `checks` | string | `"all"` | Specific checks to run (comma-separated) |
+| `recursive` | bool | `true` | Recursively scan directories |
+| `config_file` | string | `null` | Path to custom Ferret YAML config file |
+| `use_default_config` | bool | `true` | Use the default config bundled with this plugin |
+| `profile` | string | `null` | Profile name from config file |
+| `exclude_patterns` | list | `[]` | Glob patterns to exclude |
+| `show_match` | bool | `false` | ⚠️ Display matched text in findings (see security warning below) |
+| `enable_preprocessors` | bool | `true` | Enable text extraction from documents |
+| `tool_version` | string | `null` | Version constraint for ferret-scan (e.g., `>=1.0.0,<2.0.0`) |
+| `skip_version_check` | bool | `false` | Skip version compatibility check (use with caution) |
+
+### Default Configuration
+
+This plugin includes a default `ferret-config.yaml` that is automatically used when no custom config is specified. The default config includes:
+
+- Comprehensive validator patterns for intellectual property detection
+- Social media platform detection patterns
+- Pre-configured profiles for common use cases (quick, thorough, ci, security-audit, etc.)
+- AWS/Amazon internal URL patterns for IP detection
 
 ### Overriding the Default Config
 
@@ -111,27 +166,45 @@ scanners:
       recursive: true
       profile: "security-audit"  # Use predefined profile from config
       config_file: "my-ferret-config.yaml"  # Custom config file
+      # show_match: false  # Keep disabled to avoid logging sensitive data
+      enable_preprocessors: true  # Extract text from PDFs, Office docs
       exclude_patterns:
         - "*.log"
         - "node_modules/**"
         - "vendor/**"
-      quiet: false
-      no_color: true
 ```
 
-### Configuration Options
+### Version Pinning
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `confidence_levels` | string | `"all"` | Confidence levels: `high`, `medium`, `low`, or combinations |
-| `checks` | string | `"all"` | Specific checks to run (comma-separated) |
-| `recursive` | bool | `true` | Recursively scan directories |
-| `config_file` | string | `null` | Path to custom Ferret YAML config file |
-| `use_default_config` | bool | `true` | Use the default config bundled with this plugin |
-| `profile` | string | `null` | Profile name from config file |
-| `exclude_patterns` | list | `[]` | Glob patterns to exclude |
-| `no_color` | bool | `true` | Disable colored output |
-| `quiet` | bool | `false` | Minimal output mode |
+Pin to a specific ferret-scan version for reproducible builds:
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      tool_version: "==1.2.0"  # Exact version
+```
+
+Or use a version range:
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      tool_version: ">=1.0.0,<1.5.0"  # Compatible range
+```
+
+To bypass version checks (not recommended for production):
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      skip_version_check: true  # Use with caution
+```
 
 ### Available Checks
 
@@ -188,20 +261,62 @@ To create your own config file, you can:
 
 The plugin outputs results in SARIF format, which is automatically aggregated with other ASH scanner results.
 
+Results are written to:
+```
+.ash/ash_output/
+├── scanners/
+│   └── ferret-scan/
+│       └── source/
+│           └── ferret-scan.sarif
+└── reports/
+    └── ash.sarif  # Aggregated results
+```
+
 ## Example Usage
 
 ```bash
 # Run ASH with Ferret Scan enabled
-ash --source-dir /path/to/code
+uv run ash --source-dir /path/to/code
 
 # Run only Ferret Scan
-ash --source-dir /path/to/code --scanners ferret-scan
+uv run ash --source-dir /path/to/code --scanners ferret-scan
+
+# Run with debug mode (inherited by ferret-scan)
+uv run ash --source-dir /path/to/code --scanners ferret-scan --debug
+
+# Run with verbose mode (inherited by ferret-scan)
+uv run ash --source-dir /path/to/code --scanners ferret-scan --verbose
 
 # Run with a custom config file
-ash --source-dir /path/to/code \
+uv run ash --source-dir /path/to/code \
     --scanners ferret-scan \
     --config-overrides "scanners.ferret-scan.options.config_file=/path/to/custom.yaml"
 ```
+
+## Error Handling
+
+### Unsupported Option Errors
+
+If you try to use an unsupported option, you'll see a clear error message:
+
+```
+ValueError: Unsupported option 'debug' in ferret-scan plugin configuration. 
+Debug mode is inherited from ASH's global --debug flag. Do not configure at plugin level.
+```
+
+### Common Issues
+
+**ferret-scan binary not found:**
+```bash
+# Install ferret-scan
+pip install ferret-scan
+
+# Verify installation
+ferret-scan --version
+```
+
+**Empty directory warnings:**
+The plugin will skip scanning if the target directory is empty or doesn't exist, logging an appropriate warning message.
 
 ## License
 

@@ -4,6 +4,7 @@
 """Unit tests for FerretScanner plugin."""
 
 import json
+import logging
 import pytest
 from unittest.mock import patch, MagicMock, mock_open
 
@@ -11,6 +12,7 @@ from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner 
     FerretScanner,
     FerretScannerConfig,
     FerretScannerConfigOptions,
+    UNSUPPORTED_FERRET_OPTIONS,
 )
 from automated_security_helper.core.exceptions import ScannerError
 
@@ -35,8 +37,8 @@ class TestFerretScannerConfig:
         assert options.config_file is None
         assert options.profile is None
         assert options.exclude_patterns == []
-        assert options.no_color is True
-        assert options.quiet is False
+        assert options.show_match is False
+        assert options.enable_preprocessors is True
 
     def test_custom_config_initialization(self, custom_ferret_config):
         """Test custom configuration values."""
@@ -50,8 +52,6 @@ class TestFerretScannerConfig:
         assert options.checks == "CREDIT_CARD,SECRETS,SSN"
         assert options.recursive is True
         assert options.profile == "security-audit"
-        assert options.no_color is True
-        assert options.quiet is False
 
     def test_scanner_initialization_with_default_config(self, mock_plugin_context):
         """Test scanner initialization with default configuration."""
@@ -72,6 +72,87 @@ class TestFerretScannerConfig:
 
 
 @pytest.mark.unit
+class TestFerretScannerUnsupportedOptions:
+    """Test validation of unsupported options."""
+
+    def test_unsupported_option_format_raises_error(self):
+        """Test that using 'format' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(format="json")
+        
+        assert "Unsupported option 'format'" in str(exc_info.value)
+        assert "ASH requires SARIF format" in str(exc_info.value)
+
+    def test_unsupported_option_debug_raises_error(self):
+        """Test that using 'debug' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(debug=True)
+        
+        assert "Unsupported option 'debug'" in str(exc_info.value)
+        assert "inherited from ASH's global --debug flag" in str(exc_info.value)
+
+    def test_unsupported_option_verbose_raises_error(self):
+        """Test that using 'verbose' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(verbose=True)
+        
+        assert "Unsupported option 'verbose'" in str(exc_info.value)
+        assert "inherited from ASH's global --verbose flag" in str(exc_info.value)
+
+    def test_unsupported_option_web_raises_error(self):
+        """Test that using 'web' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(web=True)
+        
+        assert "Unsupported option 'web'" in str(exc_info.value)
+        assert "Web server mode is not supported" in str(exc_info.value)
+
+    def test_unsupported_option_port_raises_error(self):
+        """Test that using 'port' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(port=8080)
+        
+        assert "Unsupported option 'port'" in str(exc_info.value)
+
+    def test_unsupported_option_enable_redaction_raises_error(self):
+        """Test that using 'enable_redaction' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(enable_redaction=True)
+        
+        assert "Unsupported option 'enable_redaction'" in str(exc_info.value)
+        assert "Redaction is not supported" in str(exc_info.value)
+
+    def test_unsupported_option_generate_suppressions_raises_error(self):
+        """Test that using 'generate_suppressions' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(generate_suppressions=True)
+        
+        assert "Unsupported option 'generate_suppressions'" in str(exc_info.value)
+        assert "ASH manages suppressions centrally" in str(exc_info.value)
+
+    def test_unsupported_option_show_suppressed_raises_error(self):
+        """Test that using 'show_suppressed' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(show_suppressed=True)
+        
+        assert "Unsupported option 'show_suppressed'" in str(exc_info.value)
+
+    def test_unsupported_option_extract_text_raises_error(self):
+        """Test that using 'extract_text' option raises an error."""
+        with pytest.raises(ValueError) as exc_info:
+            FerretScannerConfigOptions(extract_text=True)
+        
+        assert "Unsupported option 'extract_text'" in str(exc_info.value)
+        assert "Text extraction mode is not supported" in str(exc_info.value)
+
+    def test_all_unsupported_options_documented(self):
+        """Test that all unsupported options have documentation."""
+        for option, message in UNSUPPORTED_FERRET_OPTIONS.items():
+            assert isinstance(message, str)
+            assert len(message) > 10  # Meaningful error message
+
+
+@pytest.mark.unit
 class TestFerretScannerConfigProcessing:
     """Test configuration option processing."""
 
@@ -86,9 +167,13 @@ class TestFerretScannerConfigProcessing:
         recursive_arg = next((arg for arg in extra_args if arg.key == "--recursive"), None)
         assert recursive_arg is not None
 
-        # Should have no-color flag
+        # Should have no-color flag (always added for ASH compatibility)
         no_color_arg = next((arg for arg in extra_args if arg.key == "--no-color"), None)
         assert no_color_arg is not None
+
+        # Should have enable-preprocessors flag (default is True)
+        preprocessors_arg = next((arg for arg in extra_args if arg.key == "--enable-preprocessors"), None)
+        assert preprocessors_arg is not None
 
         # Should NOT have confidence arg (default is "all")
         confidence_arg = next((arg for arg in extra_args if arg.key == "--confidence"), None)
@@ -141,18 +226,114 @@ class TestFerretScannerConfigProcessing:
         assert "node_modules/**" in exclude_values
         assert "vendor/**" in exclude_values
 
-    def test_process_quiet_mode(self, mock_plugin_context):
-        """Test quiet mode processing."""
+    def test_process_show_match_option(self, mock_plugin_context):
+        """Test show_match option processing."""
         config = FerretScannerConfig(
-            options=FerretScannerConfigOptions(quiet=True)
+            options=FerretScannerConfigOptions(show_match=True)
         )
 
         scanner = FerretScanner(context=mock_plugin_context, config=config)
         scanner._process_config_options()
 
         extra_args = scanner.args.extra_args
-        quiet_arg = next((arg for arg in extra_args if arg.key == "--quiet"), None)
-        assert quiet_arg is not None
+        show_match_arg = next((arg for arg in extra_args if arg.key == "--show-match"), None)
+        assert show_match_arg is not None
+
+    def test_process_enable_preprocessors_disabled(self, mock_plugin_context):
+        """Test enable_preprocessors option when disabled."""
+        config = FerretScannerConfig(
+            options=FerretScannerConfigOptions(enable_preprocessors=False)
+        )
+
+        scanner = FerretScanner(context=mock_plugin_context, config=config)
+        scanner._process_config_options()
+
+        extra_args = scanner.args.extra_args
+        preprocessors_arg = next((arg for arg in extra_args if arg.key == "--enable-preprocessors"), None)
+        assert preprocessors_arg is None
+
+
+@pytest.mark.unit
+class TestFerretScannerASHConventions:
+    """Test ASH convention compliance."""
+
+    def test_always_uses_sarif_format(self, mock_plugin_context):
+        """Test that SARIF format is always used."""
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        assert scanner.args.format_arg == "--format"
+        assert scanner.args.format_arg_value == "sarif"
+
+    def test_always_adds_no_color_flag(self, mock_plugin_context):
+        """Test that --no-color is always added."""
+        scanner = FerretScanner(context=mock_plugin_context)
+        scanner._process_config_options()
+
+        extra_args = scanner.args.extra_args
+        no_color_arg = next((arg for arg in extra_args if arg.key == "--no-color"), None)
+        assert no_color_arg is not None
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.ASH_LOGGER")
+    def test_inherits_debug_mode_from_ash(self, mock_logger, mock_plugin_context):
+        """Test that debug mode is inherited from ASH global settings."""
+        mock_logger.level = logging.DEBUG
+
+        scanner = FerretScanner(context=mock_plugin_context)
+        scanner._process_config_options()
+
+        extra_args = scanner.args.extra_args
+        debug_arg = next((arg for arg in extra_args if arg.key == "--debug"), None)
+        assert debug_arg is not None
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.ASH_LOGGER")
+    def test_inherits_verbose_mode_from_ash(self, mock_logger, mock_plugin_context):
+        """Test that verbose mode is inherited from ASH global settings."""
+        mock_logger.level = 15  # VERBOSE level
+
+        scanner = FerretScanner(context=mock_plugin_context)
+        scanner._process_config_options()
+
+        extra_args = scanner.args.extra_args
+        verbose_arg = next((arg for arg in extra_args if arg.key == "--verbose"), None)
+        assert verbose_arg is not None
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.ASH_LOGGER")
+    def test_no_debug_verbose_when_info_level(self, mock_logger, mock_plugin_context):
+        """Test that debug/verbose are not added when ASH is at INFO level."""
+        mock_logger.level = logging.INFO
+
+        scanner = FerretScanner(context=mock_plugin_context)
+        scanner._process_config_options()
+
+        extra_args = scanner.args.extra_args
+        debug_arg = next((arg for arg in extra_args if arg.key == "--debug"), None)
+        verbose_arg = next((arg for arg in extra_args if arg.key == "--verbose"), None)
+        
+        assert debug_arg is None
+        assert verbose_arg is None
+
+    def test_is_ash_debug_mode_method(self, mock_plugin_context):
+        """Test _is_ash_debug_mode method."""
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        with patch.object(scanner, '_get_ash_log_level', return_value=logging.DEBUG):
+            assert scanner._is_ash_debug_mode() is True
+        
+        with patch.object(scanner, '_get_ash_log_level', return_value=logging.INFO):
+            assert scanner._is_ash_debug_mode() is False
+
+    def test_is_ash_verbose_mode_method(self, mock_plugin_context):
+        """Test _is_ash_verbose_mode method."""
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        with patch.object(scanner, '_get_ash_log_level', return_value=15):  # VERBOSE
+            assert scanner._is_ash_verbose_mode() is True
+        
+        with patch.object(scanner, '_get_ash_log_level', return_value=logging.DEBUG):
+            assert scanner._is_ash_verbose_mode() is False
+        
+        with patch.object(scanner, '_get_ash_log_level', return_value=logging.INFO):
+            assert scanner._is_ash_verbose_mode() is False
 
 
 @pytest.mark.unit
@@ -185,10 +366,6 @@ class TestFerretScannerConfigFileDiscovery:
 
     def test_find_config_file_disabled_default(self, mock_plugin_context):
         """Test when default config is disabled and no source config exists."""
-        from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner import (
-            FerretScannerConfig,
-            FerretScannerConfigOptions,
-        )
         config = FerretScannerConfig(
             options=FerretScannerConfigOptions(use_default_config=False)
         )
@@ -219,7 +396,8 @@ class TestFerretScannerDependencies:
 
         assert result is True
         assert scanner.dependencies_satisfied is True
-        mock_find_executable.assert_called_once_with("ferret-scan")
+        # find_executable is called twice: once for validation, once for version check
+        assert mock_find_executable.call_count >= 1
 
     @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
     def test_validate_dependencies_failure_not_found(self, mock_find_executable, mock_plugin_context):
@@ -272,6 +450,15 @@ class TestFerretScannerArgumentResolution:
         assert "--checks" in args
         assert "--profile" in args
         assert "security-audit" in args
+
+    def test_resolve_arguments_always_includes_sarif(self, mock_plugin_context, mock_target_directory):
+        """Test that SARIF format is always included in arguments."""
+        scanner = FerretScanner(context=mock_plugin_context)
+
+        args = scanner._resolve_arguments(target=mock_target_directory)
+
+        format_index = args.index("--format")
+        assert args[format_index + 1] == "sarif"
 
 
 @pytest.mark.unit
@@ -451,3 +638,258 @@ class TestFerretScannerErrorHandling:
                 scanner.scan(target=mock_target_directory, target_type="source")
 
             assert "Ferret scan failed: Test error" in str(exc_info.value)
+
+
+@pytest.mark.unit
+class TestFerretScannerVersionSupport:
+    """Test version compatibility support for FerretScanner."""
+
+    def test_version_constants_defined(self):
+        """Test that version constants are properly defined."""
+        from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner import (
+            MIN_SUPPORTED_VERSION,
+            MAX_SUPPORTED_VERSION,
+            DEFAULT_VERSION_CONSTRAINT,
+            RECOMMENDED_VERSION,
+        )
+        
+        assert MIN_SUPPORTED_VERSION is not None
+        assert MAX_SUPPORTED_VERSION is not None
+        assert DEFAULT_VERSION_CONSTRAINT is not None
+        assert RECOMMENDED_VERSION is not None
+        
+        # Verify format
+        assert "." in MIN_SUPPORTED_VERSION
+        assert "." in MAX_SUPPORTED_VERSION
+        assert ">=" in DEFAULT_VERSION_CONSTRAINT or "==" in DEFAULT_VERSION_CONSTRAINT
+
+    def test_parse_version_simple(self):
+        """Test parsing simple version strings."""
+        from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner import parse_version
+        
+        assert parse_version("1.0.0") == (1, 0, 0)
+        assert parse_version("2.3.4") == (2, 3, 4)
+        assert parse_version("10.20.30") == (10, 20, 30)
+
+    def test_parse_version_with_prerelease(self):
+        """Test parsing version strings with pre-release suffixes."""
+        from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner import parse_version
+        
+        assert parse_version("1.0.0-beta") == (1, 0, 0)
+        assert parse_version("2.0.0-rc1") == (2, 0, 0)
+        assert parse_version("1.2.3-alpha.1") == (1, 2, 3)
+        assert parse_version("1.0.0+build123") == (1, 0, 0)
+
+    def test_compare_versions(self):
+        """Test version comparison."""
+        from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner import compare_versions
+        
+        # Equal versions
+        assert compare_versions("1.0.0", "1.0.0") == 0
+        assert compare_versions("2.3.4", "2.3.4") == 0
+        
+        # Less than
+        assert compare_versions("1.0.0", "2.0.0") == -1
+        assert compare_versions("1.0.0", "1.1.0") == -1
+        assert compare_versions("1.0.0", "1.0.1") == -1
+        
+        # Greater than
+        assert compare_versions("2.0.0", "1.0.0") == 1
+        assert compare_versions("1.1.0", "1.0.0") == 1
+        assert compare_versions("1.0.1", "1.0.0") == 1
+
+    def test_compare_versions_different_lengths(self):
+        """Test version comparison with different version lengths."""
+        from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner import compare_versions
+        
+        assert compare_versions("1.0", "1.0.0") == 0
+        assert compare_versions("1.0.0", "1.0") == 0
+        assert compare_versions("1.0", "1.0.1") == -1
+        assert compare_versions("1.0.1", "1.0") == 1
+
+    def test_is_version_compatible(self):
+        """Test version compatibility checking."""
+        from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner import is_version_compatible
+        
+        # Within range
+        assert is_version_compatible("1.0.0", "0.1.0", "2.0.0") is True
+        assert is_version_compatible("1.5.0", "1.0.0", "2.0.0") is True
+        assert is_version_compatible("1.9.9", "1.0.0", "2.0.0") is True
+        
+        # At minimum boundary (inclusive)
+        assert is_version_compatible("1.0.0", "1.0.0", "2.0.0") is True
+        
+        # At maximum boundary (exclusive)
+        assert is_version_compatible("2.0.0", "1.0.0", "2.0.0") is False
+        
+        # Below minimum
+        assert is_version_compatible("0.9.0", "1.0.0", "2.0.0") is False
+        
+        # Above maximum
+        assert is_version_compatible("2.1.0", "1.0.0", "2.0.0") is False
+
+    def test_tool_version_option_in_config(self):
+        """Test that tool_version option is available in config."""
+        config = FerretScannerConfig(
+            options=FerretScannerConfigOptions(
+                tool_version=">=1.0.0,<1.5.0"
+            )
+        )
+        
+        assert config.options.tool_version == ">=1.0.0,<1.5.0"
+
+    def test_skip_version_check_option_in_config(self):
+        """Test that skip_version_check option is available in config."""
+        config = FerretScannerConfig(
+            options=FerretScannerConfigOptions(
+                skip_version_check=True
+            )
+        )
+        
+        assert config.options.skip_version_check is True
+
+    def test_get_tool_version_constraint_default(self, mock_plugin_context):
+        """Test _get_tool_version_constraint returns default when not configured."""
+        from automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner import DEFAULT_VERSION_CONSTRAINT
+        
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        constraint = scanner._get_tool_version_constraint()
+        assert constraint == DEFAULT_VERSION_CONSTRAINT
+
+    def test_get_tool_version_constraint_custom(self, mock_plugin_context):
+        """Test _get_tool_version_constraint returns custom value when configured."""
+        config = FerretScannerConfig(
+            options=FerretScannerConfigOptions(
+                tool_version="==1.2.3"
+            )
+        )
+        
+        scanner = FerretScanner(context=mock_plugin_context, config=config)
+        
+        constraint = scanner._get_tool_version_constraint()
+        assert constraint == "==1.2.3"
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
+    def test_get_installed_version_success(self, mock_find_executable, mock_plugin_context):
+        """Test _get_installed_version returns version when available."""
+        mock_find_executable.return_value = "/usr/local/bin/ferret-scan"
+        
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        # Mock subprocess.run to return a version
+        with patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.subprocess") as mock_subprocess:
+            mock_subprocess.run.return_value = MagicMock(
+                returncode=0,
+                stdout="ferret-scan version 1.2.3"
+            )
+            
+            version = scanner._get_installed_version()
+        
+        assert version == "1.2.3"
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
+    def test_get_installed_version_not_found(self, mock_find_executable, mock_plugin_context):
+        """Test _get_installed_version returns None when not installed."""
+        mock_find_executable.return_value = None
+        
+        scanner = FerretScanner(context=mock_plugin_context)
+        version = scanner._get_installed_version()
+        
+        assert version is None
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
+    def test_get_installed_version_parse_error(self, mock_find_executable, mock_plugin_context):
+        """Test _get_installed_version handles parse errors gracefully."""
+        mock_find_executable.return_value = "/usr/local/bin/ferret-scan"
+        
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        # Mock subprocess.run to raise an exception
+        with patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.subprocess") as mock_subprocess:
+            mock_subprocess.run.side_effect = OSError("Command failed")
+            mock_subprocess.TimeoutExpired = TimeoutError
+            mock_subprocess.SubprocessError = Exception
+            
+            version = scanner._get_installed_version()
+        
+        assert version is None
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
+    def test_check_version_compatibility_compatible(self, mock_find_executable, mock_plugin_context):
+        """Test _check_version_compatibility with compatible version."""
+        mock_find_executable.return_value = "/usr/local/bin/ferret-scan"
+        
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        with patch.object(scanner, '_get_installed_version', return_value="1.0.0"):
+            is_compatible, version, warning = scanner._check_version_compatibility()
+            
+            assert is_compatible is True
+            assert version == "1.0.0"
+            assert warning is None
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
+    def test_check_version_compatibility_too_old(self, mock_find_executable, mock_plugin_context):
+        """Test _check_version_compatibility with version too old."""
+        mock_find_executable.return_value = "/usr/local/bin/ferret-scan"
+        
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        with patch.object(scanner, '_get_installed_version', return_value="0.0.1"):
+            is_compatible, version, warning = scanner._check_version_compatibility()
+            
+            assert is_compatible is False
+            assert version == "0.0.1"
+            assert warning is not None
+            assert "older than the minimum" in warning
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
+    def test_check_version_compatibility_too_new(self, mock_find_executable, mock_plugin_context):
+        """Test _check_version_compatibility with version too new."""
+        mock_find_executable.return_value = "/usr/local/bin/ferret-scan"
+        
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        with patch.object(scanner, '_get_installed_version', return_value="99.0.0"):
+            is_compatible, version, warning = scanner._check_version_compatibility()
+            
+            assert is_compatible is False
+            assert version == "99.0.0"
+            assert warning is not None
+            assert "newer than the maximum" in warning
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
+    def test_validate_dependencies_with_version_check(self, mock_find_executable, mock_plugin_context):
+        """Test validate_plugin_dependencies performs version check."""
+        mock_find_executable.return_value = "/usr/local/bin/ferret-scan"
+        
+        scanner = FerretScanner(context=mock_plugin_context)
+        
+        with patch.object(scanner, '_check_version_compatibility', return_value=(True, "1.0.0", None)) as mock_check:
+            result = scanner.validate_plugin_dependencies()
+            
+            assert result is True
+            mock_check.assert_called_once()
+
+    @patch("automated_security_helper.plugin_modules.ash_ferret_plugins.ferret_scanner.find_executable")
+    def test_validate_dependencies_skip_version_check(self, mock_find_executable, mock_plugin_context):
+        """Test validate_plugin_dependencies respects skip_version_check."""
+        mock_find_executable.return_value = "/usr/local/bin/ferret-scan"
+        
+        config = FerretScannerConfig(
+            options=FerretScannerConfigOptions(skip_version_check=True)
+        )
+        scanner = FerretScanner(context=mock_plugin_context, config=config)
+        
+        with patch.object(scanner, '_check_version_compatibility', return_value=(False, "99.0.0", "Version too new")), \
+             patch.object(scanner, '_plugin_log') as mock_log:
+            
+            result = scanner.validate_plugin_dependencies()
+            
+            # Should still pass because skip_version_check is True
+            assert result is True
+            
+            # Should log warning about skipping
+            log_calls = [str(call) for call in mock_log.call_args_list]
+            assert any("skip_version_check=true" in call for call in log_calls)

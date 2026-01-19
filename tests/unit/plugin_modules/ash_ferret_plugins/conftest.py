@@ -49,8 +49,8 @@ def custom_ferret_config():
             checks="CREDIT_CARD,SECRETS,SSN",
             recursive=True,
             profile="security-audit",
-            no_color=True,
-            quiet=False,
+            show_match=False,
+            enable_preprocessors=True,
         )
     )
 

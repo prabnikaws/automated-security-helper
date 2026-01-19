@@ -17,7 +17,45 @@ The Ferret Scan plugin enables ASH to leverage Ferret's powerful sensitive data 
 - **Intellectual Property**: Patents, trademarks, copyrights, trade secrets
 - **Document Metadata**: EXIF and document metadata extraction
 
+## ASH Convention Compliance
+
+This plugin follows ASH conventions for consistent behavior across all scanners:
+
+### Inherited from ASH (Do NOT configure at plugin level)
+
+| Feature | ASH Convention | Notes |
+|---------|---------------|-------|
+| **Debug Mode** | `ash --debug` | Automatically passed to ferret-scan |
+| **Verbose Mode** | `ash --verbose` | Automatically passed to ferret-scan |
+| **Output Format** | Always SARIF | Required by ASH for result aggregation |
+| **Output Directory** | `.ash/ash_output/scanners/ferret-scan/` | Follows ASH conventions |
+| **Offline Mode** | `ASH_OFFLINE=true` | Respects ASH offline mode |
+| **Suppressions** | `.ash/suppressions.yaml` | Managed centrally by ASH |
+
+### Unsupported Options
+
+The following ferret-scan CLI options are **NOT supported** and will raise an error:
+
+| Option | Reason |
+|--------|--------|
+| `format` | ASH requires SARIF format |
+| `debug`, `verbose` | Inherited from ASH global flags |
+| `web`, `port` | Web server mode not applicable |
+| `enable_redaction`, `redaction_*` | Post-processing, not scanning |
+| `generate_suppressions`, `show_suppressed` | ASH manages suppressions |
+| `extract_text` | Utility mode, not scanning |
+
 ## Prerequisites
+
+### Version Compatibility
+
+This plugin is tested and compatible with specific ferret-scan versions. Using versions outside the supported range may result in unexpected behavior.
+
+**Supported Versions:** 0.1.0 to 2.0.0 (exclusive)
+
+| Plugin Version | ferret-scan Version | Notes |
+|---------------|---------------------|-------|
+| Current | 0.1.0 - 2.0.0 (exclusive) | Initial release with full feature support |
 
 ### Install Ferret Scan
 
@@ -69,6 +107,12 @@ uv run ash --scanners ferret-scan
 
 # Scan specific directory
 uv run ash --source-dir /path/to/project --scanners ferret-scan
+
+# Run with debug mode (automatically passed to ferret-scan)
+uv run ash --scanners ferret-scan --debug
+
+# Run with verbose mode (automatically passed to ferret-scan)
+uv run ash --scanners ferret-scan --verbose
 ```
 
 ### Run Without Configuration File
@@ -109,8 +153,35 @@ scanners:
 | `use_default_config` | bool | `true` | Use the default config bundled with this plugin |
 | `profile` | string | `null` | Profile name from config file |
 | `exclude_patterns` | list | `[]` | Glob patterns to exclude |
-| `no_color` | bool | `true` | Disable colored output |
-| `quiet` | bool | `false` | Minimal output mode |
+| `show_match` | bool | `false` | ⚠️ Display matched text in findings (see security warning below) |
+| `enable_preprocessors` | bool | `true` | Enable text extraction from documents (PDF, Office) |
+| `tool_version` | string | `null` | Version constraint for ferret-scan (e.g., `>=1.0.0,<2.0.0`, `==1.2.0`) |
+| `skip_version_check` | bool | `false` | Skip version compatibility check (use with caution) |
+
+### Options NOT Supported (Will Raise Error)
+
+The following options are **not supported** because they conflict with ASH conventions:
+
+| Option | Error Message |
+|--------|--------------|
+| `format` | "ASH requires SARIF format for result aggregation" |
+| `debug` | "Debug mode is inherited from ASH's global --debug flag" |
+| `verbose` | "Verbose mode is inherited from ASH's global --verbose flag" |
+| `web`, `port` | "Web server mode is not supported in ASH integration" |
+| `enable_redaction` | "Redaction is not supported in ASH integration" |
+| `generate_suppressions` | "ASH manages suppressions centrally" |
+| `show_suppressed` | "ASH manages suppressions centrally" |
+| `extract_text` | "Text extraction mode is not supported" |
+
+### Security Warning: show_match Option
+
+⚠️ **Data Exfiltration Risk**: The `show_match` option causes ferret-scan to include the actual matched sensitive data (credit card numbers, SSNs, API keys, etc.) in the scan output. This creates significant security risks:
+
+- **Log file exposure**: Matched sensitive data will appear in SARIF reports, CI/CD logs, and ASH output files
+- **Accidental data leakage**: Reports shared with team members or uploaded to security dashboards may contain real sensitive data
+- **Compliance violations**: Logging actual PII/PCI data may violate data protection regulations (GDPR, PCI-DSS, HIPAA)
+
+**Recommendation**: Keep `show_match: false` (the default) in production environments. Only enable it temporarily for debugging in isolated, secure environments where log files are properly protected and purged.
 
 ### Available Checks
 
@@ -138,13 +209,47 @@ scanners:
       recursive: true
       profile: "security-audit"
       config_file: "my-ferret-config.yaml"
+      # show_match: false  # Keep disabled to avoid logging sensitive data
+      enable_preprocessors: true  # Extract text from PDFs, Office docs
       exclude_patterns:
         - "*.log"
         - "node_modules/**"
         - "vendor/**"
         - ".git/**"
-      quiet: false
-      no_color: true
+```
+
+Note: Do NOT configure `debug`, `verbose`, `format`, or suppression options at the plugin level. These are managed by ASH globally.
+
+### Version Pinning
+
+Pin to a specific ferret-scan version for reproducible builds:
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      tool_version: "==1.2.0"  # Exact version
+```
+
+Or use a version range:
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      tool_version: ">=1.0.0,<1.5.0"  # Compatible range
+```
+
+To bypass version checks (not recommended for production):
+
+```yaml
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      skip_version_check: true  # Use with caution
 ```
 
 ## Default Configuration
@@ -321,6 +426,19 @@ which ferret-scan
 pip install ferret-scan
 ```
 
+**Unsupported option error**:
+If you see an error like:
+```
+ValueError: Unsupported option 'debug' in ferret-scan plugin configuration. 
+Debug mode is inherited from ASH's global --debug flag. Do not configure at plugin level.
+```
+
+This means you're trying to use an option that conflicts with ASH conventions. Remove the option from your configuration and use the ASH global flag instead:
+```bash
+# Instead of configuring debug in plugin options, use:
+uv run ash --scanners ferret-scan --debug
+```
+
 **Empty directory warnings**:
 The plugin will skip scanning if the target directory is empty or doesn't exist, logging an appropriate warning message.
 
@@ -335,7 +453,11 @@ ferret-scan --format sarif --file /path/to/test/file
 Enable verbose logging to troubleshoot issues:
 
 ```bash
-uv run ash --scanners ferret-scan --log-level DEBUG
+# Use ASH's global debug flag (automatically passed to ferret-scan)
+uv run ash --scanners ferret-scan --debug
+
+# Or use verbose mode
+uv run ash --scanners ferret-scan --verbose
 ```
 
 ## Integration Examples
