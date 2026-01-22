@@ -439,18 +439,29 @@ The `_process_config_options()` method appends to `self.args.extra_args`. If cal
 
 Before releasing changes to the ferret-scan plugin, perform these manual tests to verify end-to-end functionality.
 
+### Test Data Location
+
+The project includes comprehensive test data for ferret-scan at:
+```
+tests/test_data/scanners/ferret-scan/
+├── sample.txt       # Text file with various sensitive data patterns
+└── 10-MB-Test.docx  # Large document for preprocessor testing
+```
+
+The `sample.txt` file contains examples across confidence levels:
+- **High confidence**: Valid credit cards (Visa, MasterCard, AMEX, Discover, JCB), valid passports (US, UK, Canadian, EU, MRZ)
+- **Medium confidence**: Test cards, suspicious passport patterns
+- **Low confidence**: Invalid checksums, repeated digits, wrong lengths
+- **False positives**: SKUs, serial numbers, phone numbers, dates, code snippets
+- **Edge cases**: Mathematical constants, formatting variations, mixed contexts
+- **International examples**: European, Asian, North American formats
+
 ### Prerequisites
 
 ```bash
 # Ensure ferret-scan is installed
 pip install ferret-scan
 ferret-scan --version
-
-# Create test data directory with sensitive data samples
-mkdir -p /tmp/ferret-test-data
-echo "My credit card is 4111111111111111" > /tmp/ferret-test-data/test.txt
-echo "SSN: 123-45-6789" >> /tmp/ferret-test-data/test.txt
-echo "API_KEY=sk_live_abcdef123456" >> /tmp/ferret-test-data/test.txt
 ```
 
 ### Test Scenarios
@@ -471,13 +482,13 @@ uv run ash plugin list | grep -i ferret
 #### 2. Basic Scan with Test Data
 
 ```bash
-# Run a basic scan (with plugin module flag)
-uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
+# Run a basic scan using the project's test data
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins
 
 # Check output
 ls -la .ash/ash_output/scanners/ferret-scan/source/
-# Expected: ferret-scan.sarif file should exist
+# Expected: ferret-scan.sarif file should exist with findings
 ```
 
 #### 3. SARIF Output Verification
@@ -487,16 +498,20 @@ ls -la .ash/ash_output/scanners/ferret-scan/source/
 cat .ash/ash_output/scanners/ferret-scan/source/ferret-scan.sarif | jq '.version'
 # Expected: "2.1.0"
 
-# Check for findings
+# Check for findings (should find credit cards, passports, SSNs, etc.)
 cat .ash/ash_output/scanners/ferret-scan/source/ferret-scan.sarif | jq '.runs[0].results | length'
-# Expected: > 0 (should find credit card, SSN, API key)
+# Expected: > 0 (should find many sensitive data patterns)
+
+# View finding types
+cat .ash/ash_output/scanners/ferret-scan/source/ferret-scan.sarif | jq '[.runs[0].results[].ruleId] | unique'
+# Expected: Various rule IDs for credit cards, passports, etc.
 ```
 
 #### 4. Debug Mode Inheritance
 
 ```bash
 # Run with ASH debug mode (with plugin module flag)
-uv run ash --debug scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
+uv run ash --debug scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins 2>&1 | grep -i "debug"
 # Expected: Should see debug output from both ASH and ferret-scan
 ```
@@ -505,7 +520,7 @@ uv run ash --debug scan --source-dir /tmp/ferret-test-data --scanners ferret-sca
 
 ```bash
 # Run with ASH verbose mode
-uv run ash --verbose scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
+uv run ash --verbose scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins 2>&1
 # Expected: Should see verbose output
 ```
@@ -513,19 +528,25 @@ uv run ash --verbose scan --source-dir /tmp/ferret-test-data --scanners ferret-s
 #### 6. Custom Configuration Options
 
 ```bash
-# Test with custom options via config override
-uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
+# Test with high confidence only
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins \
     --config-overrides "scanners.ferret-scan.options.confidence_levels=high"
-# Expected: Should only show high-confidence findings
+# Expected: Should only show high-confidence findings (fewer results)
+
+# Test with specific checks
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
+    --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins \
+    --config-overrides "scanners.ferret-scan.options.checks=CREDIT_CARD"
+# Expected: Should only show credit card findings
 ```
 
 #### 7. Version Compatibility Warning
 
 ```bash
 # If you have an incompatible version installed, verify warning is shown
-# (This test requires manually installing an old/new version)
-uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan 2>&1 | grep -i "version"
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
+    --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins 2>&1 | grep -i "version"
 ```
 
 #### 8. Unsupported Option Error
@@ -534,6 +555,8 @@ uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan 2>&1 |
 # Test that unsupported options raise clear errors
 # Create a config file with unsupported option
 cat > /tmp/test-ash-config.yaml << 'EOF'
+ash_plugin_modules:
+  - automated_security_helper.plugin_modules.ash_ferret_plugins
 scanners:
   ferret-scan:
     enabled: true
@@ -541,8 +564,9 @@ scanners:
       debug: true  # This should fail
 EOF
 
-uv run ash scan --source-dir /tmp/ferret-test-data --config /tmp/test-ash-config.yaml 2>&1
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --config /tmp/test-ash-config.yaml 2>&1
 # Expected: Error message about unsupported 'debug' option
+rm /tmp/test-ash-config.yaml
 ```
 
 #### 9. Empty Directory Handling
@@ -552,15 +576,16 @@ mkdir -p /tmp/empty-test-dir
 uv run ash scan --source-dir /tmp/empty-test-dir --scanners ferret-scan \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins 2>&1
 # Expected: Should skip gracefully with appropriate message
+rmdir /tmp/empty-test-dir
 ```
 
 #### 10. Missing Binary Handling
 
 ```bash
 # Temporarily rename ferret-scan binary
-which ferret-scan
+FERRET_PATH=$(which ferret-scan)
 # Rename it, then run:
-uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins 2>&1
 # Expected: Clear error about missing ferret-scan binary
 # Remember to restore the binary!
@@ -570,17 +595,17 @@ uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
 
 ```bash
 # Test using a profile from the default config
-uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins \
     --config-overrides "scanners.ferret-scan.options.profile=quick"
-# Expected: Should use the 'quick' profile settings
+# Expected: Should use the 'quick' profile settings (high confidence only)
 ```
 
 #### 12. ASH Report Integration
 
 ```bash
 # Verify ferret-scan results are included in aggregated ASH report
-uv run ash scan --source-dir /tmp/ferret-test-data \
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins
 cat .ash/ash_output/reports/ash.sarif | jq '.runs[] | select(.tool.driver.name == "ferret-scan")'
 # Expected: ferret-scan run should be present in aggregated report
@@ -590,9 +615,19 @@ cat .ash/ash_output/reports/ash.sarif | jq '.runs[] | select(.tool.driver.name =
 
 ```bash
 # Run ferret-scan alongside other scanners
-uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan,bandit \
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan,bandit \
     --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins
 # Expected: Both scanners should run and results should be aggregated
+```
+
+#### 14. Document Preprocessing (DOCX)
+
+```bash
+# Test text extraction from Office documents
+uv run ash scan --source-dir tests/test_data/scanners/ferret-scan --scanners ferret-scan \
+    --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins \
+    --config-overrides "scanners.ferret-scan.options.enable_preprocessors=true"
+# Expected: Should scan both sample.txt and extract text from 10-MB-Test.docx
 ```
 
 ### Quick Smoke Test Script
@@ -605,31 +640,36 @@ set -e
 
 echo "=== Ferret Plugin Smoke Test ==="
 
-# Setup
-TEST_DIR=$(mktemp -d)
-echo "Test directory: $TEST_DIR"
+# Use project test data
+TEST_DIR="tests/test_data/scanners/ferret-scan"
+OUTPUT_DIR=".ash/ash_output"
 
-# Create test data
-echo "4111111111111111" > "$TEST_DIR/credit-card.txt"
-echo "SSN: 123-45-6789" > "$TEST_DIR/ssn.txt"
+echo "Test data directory: $TEST_DIR"
+
+# Clean previous output
+rm -rf "$OUTPUT_DIR"
 
 # Run scan (with plugin module flag)
 echo "Running ASH scan..."
 uv run ash scan --source-dir "$TEST_DIR" --scanners ferret-scan \
-    --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins \
-    --output-dir "$TEST_DIR/output"
+    --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins
 
 # Verify output
-if [ -f "$TEST_DIR/output/scanners/ferret-scan/source/ferret-scan.sarif" ]; then
+if [ -f "$OUTPUT_DIR/scanners/ferret-scan/source/ferret-scan.sarif" ]; then
     echo "✓ SARIF output file created"
     
-    FINDINGS=$(cat "$TEST_DIR/output/scanners/ferret-scan/source/ferret-scan.sarif" | jq '.runs[0].results | length')
+    FINDINGS=$(cat "$OUTPUT_DIR/scanners/ferret-scan/source/ferret-scan.sarif" | jq '.runs[0].results | length')
     echo "✓ Found $FINDINGS findings"
     
     if [ "$FINDINGS" -gt 0 ]; then
         echo "✓ Smoke test PASSED"
+        
+        # Show summary of finding types
+        echo ""
+        echo "Finding types detected:"
+        cat "$OUTPUT_DIR/scanners/ferret-scan/source/ferret-scan.sarif" | jq -r '[.runs[0].results[].ruleId] | group_by(.) | map({rule: .[0], count: length}) | .[] | "  \(.rule): \(.count)"'
     else
-        echo "✗ No findings detected (expected some)"
+        echo "✗ No findings detected (expected many)"
         exit 1
     fi
 else
@@ -637,16 +677,14 @@ else
     exit 1
 fi
 
-# Cleanup
-rm -rf "$TEST_DIR"
+echo ""
 echo "=== Test Complete ==="
 ```
 
 ### Cleanup
 
 ```bash
-# Remove test data
-rm -rf /tmp/ferret-test-data /tmp/empty-test-dir /tmp/test-ash-config.yaml
+# Remove ASH output (test data is part of the project, don't delete it)
 rm -rf .ash/ash_output
 ```
 
