@@ -435,6 +435,205 @@ The `validate_no_unsupported_options` validator runs in `mode="before"`, meaning
 
 The `_process_config_options()` method appends to `self.args.extra_args`. If called multiple times (e.g., in tests), args will accumulate. The scanner creates a fresh `ToolArgs` in `model_post_init`, so this is only an issue if you call `_process_config_options()` multiple times on the same scanner instance.
 
+## Manual Testing Guide
+
+Before releasing changes to the ferret-scan plugin, perform these manual tests to verify end-to-end functionality.
+
+### Prerequisites
+
+```bash
+# Ensure ferret-scan is installed
+pip install ferret-scan
+ferret-scan --version
+
+# Create test data directory with sensitive data samples
+mkdir -p /tmp/ferret-test-data
+echo "My credit card is 4111111111111111" > /tmp/ferret-test-data/test.txt
+echo "SSN: 123-45-6789" >> /tmp/ferret-test-data/test.txt
+echo "API_KEY=sk_live_abcdef123456" >> /tmp/ferret-test-data/test.txt
+```
+
+### Test Scenarios
+
+#### 1. Basic Plugin Discovery
+
+```bash
+# Verify plugin is discovered by ASH
+uv run ash plugin list | grep -i ferret
+# Expected: ferret-scan should appear in the list
+```
+
+#### 2. Basic Scan with Test Data
+
+```bash
+# Run a basic scan
+uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan
+
+# Check output
+ls -la .ash/ash_output/scanners/ferret-scan/source/
+# Expected: ferret-scan.sarif file should exist
+```
+
+#### 3. SARIF Output Verification
+
+```bash
+# Verify SARIF format
+cat .ash/ash_output/scanners/ferret-scan/source/ferret-scan.sarif | jq '.version'
+# Expected: "2.1.0"
+
+# Check for findings
+cat .ash/ash_output/scanners/ferret-scan/source/ferret-scan.sarif | jq '.runs[0].results | length'
+# Expected: > 0 (should find credit card, SSN, API key)
+```
+
+#### 4. Debug Mode Inheritance
+
+```bash
+# Run with ASH debug mode
+uv run ash --debug scan --source-dir /tmp/ferret-test-data --scanners ferret-scan 2>&1 | grep -i "debug"
+# Expected: Should see debug output from both ASH and ferret-scan
+```
+
+#### 5. Verbose Mode Inheritance
+
+```bash
+# Run with ASH verbose mode
+uv run ash --verbose scan --source-dir /tmp/ferret-test-data --scanners ferret-scan 2>&1
+# Expected: Should see verbose output
+```
+
+#### 6. Custom Configuration Options
+
+```bash
+# Test with custom options via config override
+uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
+    --config-overrides "scanners.ferret-scan.options.confidence_levels=high"
+# Expected: Should only show high-confidence findings
+```
+
+#### 7. Version Compatibility Warning
+
+```bash
+# If you have an incompatible version installed, verify warning is shown
+# (This test requires manually installing an old/new version)
+uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan 2>&1 | grep -i "version"
+```
+
+#### 8. Unsupported Option Error
+
+```bash
+# Test that unsupported options raise clear errors
+# Create a config file with unsupported option
+cat > /tmp/test-ash-config.yaml << 'EOF'
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      debug: true  # This should fail
+EOF
+
+uv run ash scan --source-dir /tmp/ferret-test-data --config /tmp/test-ash-config.yaml 2>&1
+# Expected: Error message about unsupported 'debug' option
+```
+
+#### 9. Empty Directory Handling
+
+```bash
+mkdir -p /tmp/empty-test-dir
+uv run ash scan --source-dir /tmp/empty-test-dir --scanners ferret-scan 2>&1
+# Expected: Should skip gracefully with appropriate message
+```
+
+#### 10. Missing Binary Handling
+
+```bash
+# Temporarily rename ferret-scan binary
+which ferret-scan
+# Rename it, then run:
+uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan 2>&1
+# Expected: Clear error about missing ferret-scan binary
+# Remember to restore the binary!
+```
+
+#### 11. Profile Usage
+
+```bash
+# Test using a profile from the default config
+uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan \
+    --config-overrides "scanners.ferret-scan.options.profile=quick"
+# Expected: Should use the 'quick' profile settings
+```
+
+#### 12. ASH Report Integration
+
+```bash
+# Verify ferret-scan results are included in aggregated ASH report
+uv run ash scan --source-dir /tmp/ferret-test-data
+cat .ash/ash_output/reports/ash.sarif | jq '.runs[] | select(.tool.driver.name == "ferret-scan")'
+# Expected: ferret-scan run should be present in aggregated report
+```
+
+#### 13. Combined with Other Scanners
+
+```bash
+# Run ferret-scan alongside other scanners
+uv run ash scan --source-dir /tmp/ferret-test-data --scanners ferret-scan,bandit
+# Expected: Both scanners should run and results should be aggregated
+```
+
+### Quick Smoke Test Script
+
+```bash
+#!/bin/bash
+# Save as test-ferret-plugin.sh
+
+set -e
+
+echo "=== Ferret Plugin Smoke Test ==="
+
+# Setup
+TEST_DIR=$(mktemp -d)
+echo "Test directory: $TEST_DIR"
+
+# Create test data
+echo "4111111111111111" > "$TEST_DIR/credit-card.txt"
+echo "SSN: 123-45-6789" > "$TEST_DIR/ssn.txt"
+
+# Run scan
+echo "Running ASH scan..."
+uv run ash scan --source-dir "$TEST_DIR" --scanners ferret-scan --output-dir "$TEST_DIR/output"
+
+# Verify output
+if [ -f "$TEST_DIR/output/scanners/ferret-scan/source/ferret-scan.sarif" ]; then
+    echo "✓ SARIF output file created"
+    
+    FINDINGS=$(cat "$TEST_DIR/output/scanners/ferret-scan/source/ferret-scan.sarif" | jq '.runs[0].results | length')
+    echo "✓ Found $FINDINGS findings"
+    
+    if [ "$FINDINGS" -gt 0 ]; then
+        echo "✓ Smoke test PASSED"
+    else
+        echo "✗ No findings detected (expected some)"
+        exit 1
+    fi
+else
+    echo "✗ SARIF output file not found"
+    exit 1
+fi
+
+# Cleanup
+rm -rf "$TEST_DIR"
+echo "=== Test Complete ==="
+```
+
+### Cleanup
+
+```bash
+# Remove test data
+rm -rf /tmp/ferret-test-data /tmp/empty-test-dir /tmp/test-ash-config.yaml
+rm -rf .ash/ash_output
+```
+
 ## Related Resources
 
 - [ferret-scan GitHub Repository](https://github.com/awslabs/ferret-scan)
