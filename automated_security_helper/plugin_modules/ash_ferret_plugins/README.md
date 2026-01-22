@@ -35,12 +35,46 @@ make build
 
 ### Enable the Plugin
 
-Add the plugin module to your ASH configuration:
+The ferret-scan plugin is a community plugin that must be explicitly enabled. There are two ways to do this:
+
+#### Option 1: Add to ASH Configuration File (Recommended)
+
+Add the plugin module to your `.ash/.ash.yaml` configuration file:
 
 ```yaml
 ash_plugin_modules:
   - automated_security_helper.plugin_modules.ash_ferret_plugins
+
+scanners:
+  ferret-scan:
+    enabled: true
+    options:
+      confidence_levels: "all"
+      checks: "all"
 ```
+
+#### Option 2: Command Line Flag
+
+Use the `--ash-plugin-modules` flag when running ASH:
+
+```bash
+uv run ash scan --source-dir /path/to/code \
+    --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins
+```
+
+### Verify Plugin is Loaded
+
+To verify the plugin is properly loaded:
+
+```bash
+# With config file
+uv run ash plugin list | grep -i ferret
+
+# Or with command line flag
+uv run ash plugin list --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins | grep -i ferret
+```
+
+You should see `ferret-scan` in the list of scanners.
 
 ## ASH Convention Compliance
 

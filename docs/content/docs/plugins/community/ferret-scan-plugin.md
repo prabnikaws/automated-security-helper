@@ -82,16 +82,47 @@ ferret-scan --help
 
 ## Quick Start
 
-### Basic Configuration
+### Enable the Plugin
 
-Ferret Scan plugin is not included by default with ASH. Include the plugin module in your `.ash/.ash.yaml` configuration file:
+The ferret-scan plugin is a community plugin that must be explicitly enabled. There are two ways to do this:
+
+#### Option 1: Add to ASH Configuration File (Recommended)
+
+Include the plugin module in your `.ash/.ash.yaml` configuration file:
 
 ```yaml
 ash_plugin_modules:
   - automated_security_helper.plugin_modules.ash_ferret_plugins
+
+scanners:
+  ferret-scan:
+    enabled: true
 ```
 
-Add scanner configuration:
+#### Option 2: Command Line Flag
+
+Use the `--ash-plugin-modules` flag when running ASH:
+
+```bash
+uv run ash scan --source-dir /path/to/code \
+    --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins
+```
+
+### Verify Plugin is Loaded
+
+```bash
+# With config file
+uv run ash plugin list | grep -i ferret
+
+# Or with command line flag
+uv run ash plugin list --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins | grep -i ferret
+```
+
+You should see `ferret-scan` in the list of scanners.
+
+### Basic Configuration
+
+Add scanner configuration to your `.ash/.ash.yaml`:
 
 ```yaml
 scanners:
@@ -122,10 +153,10 @@ If you want to run Ferret Scan without saving a configuration file:
 ```bash
 # Scan current directory only with ferret-scan
 uv run ash --scanners ferret-scan \
-  --config-overrides "ash_plugin_modules+=[\"automated_security_helper.plugin_modules.ash_ferret_plugins\"]"
+  --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins
 
 # Scan with all available scanners (including ferret-scan)
-uv run ash --config-overrides "ash_plugin_modules+=[\"automated_security_helper.plugin_modules.ash_ferret_plugins\"]"
+uv run ash --ash-plugin-modules automated_security_helper.plugin_modules.ash_ferret_plugins
 ```
 
 ## Configuration Options
