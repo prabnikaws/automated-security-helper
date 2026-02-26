@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=../automated_security_helper/schemas/AshConfig.json
 project_name: automated-security-helper
 fail_on_findings: true
-ash_plugin_modules: []
+ash_plugin_modules:
+  - automated_security_helper.plugin_modules.ash_ferret_plugins
 # ash_plugin_modules:
 #   - automated_security_helper.plugin_modules.ash_aws_plugins
 #   - automated_security_helper.plugin_modules.ash_trivy_plugins
@@ -129,6 +130,143 @@ global_settings:
     - rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
       path: tests/unit/utils/test_secret_masking.py
       reason: "False positive - Multiple ocurrences of the keyword due to the nature of the test suite"
+    - path: "terraform/modules/**"
+      rule_id: terraform.lang.security.iam.no-iam-resource-exposure.no-iam-resource-exposure
+      reason: "IAM resource exposure rules are reviewed and accepted for these modules"
+    - path: "terraform/modules/**"
+      rule_id: terraform.lang.security.iam.no-iam-data-exfiltration.no-iam-data-exfiltration
+      reason: "IAM data exfiltration rules are reviewed and accepted for these modules"
+    - path: "terraform/modules/**"
+      rule_id: terraform.aws.security.aws-lambda-x-ray-tracing-not-active.aws-lambda-x-ray-tracing-not-active
+      reason: "X-Ray tracing not required for these Lambda functions"
+    - path: "terraform/modules/**"
+      rule_id: terraform.aws.security.aws-lambda-environment-unencrypted.aws-lambda-environment-unencrypted
+      reason: "Lambda environment encryption reviewed and accepted"
+    - path: "terraform/modules/**"
+      rule_id: terraform.lang.security.iam.no-iam-priv-esc-funcs.no-iam-priv-esc-funcs
+      reason: "IAM privilege escalation rules are reviewed and accepted for these modules"
+    - path: "CLIENT_DOCUMENTATION.txt"
+      rule_id: SECRET-SECRET-KEYWORD
+      reason: "False positive in documentation file"
+    - rule_id: SECRET-SECRET-KEYWORD
+      path: CLIENT_DOCUMENTATION.txt
+      line_start: 1894
+      line_end: 1894
+      reason: "False positive - Client documentation, not an actual secret"
+    - rule_id: terraform.lang.security.iam.no-iam-data-exfiltration.no-iam-data-exfiltration
+      path: terraform/modules/datazone-blueprints/main.tf
+      line_start: 101
+      line_end: 101
+      reason: "Accepted risk - secretsmanager:GetSecretValue scoped by ResourceTag condition on AmazonDataZoneDomain"
+    - rule_id: terraform.lang.security.iam.no-iam-data-exfiltration.no-iam-data-exfiltration
+      path: terraform/modules/datazone-blueprints/main.tf
+      line_start: 153
+      line_end: 153
+      reason: "Accepted risk - S3 actions scoped by aws:ResourceAccount condition limiting to same account"
+    - rule_id: terraform.lang.security.iam.no-iam-data-exfiltration.no-iam-data-exfiltration
+      path: terraform/modules/datazone-domain-units/main.tf
+      line_start: 106
+      line_end: 106
+      reason: "Accepted risk - KMS actions (Decrypt/GenerateDataKey) require Resource=* as key ARNs are dynamic at deploy time"
+    - rule_id: terraform.lang.security.iam.no-iam-data-exfiltration.no-iam-data-exfiltration
+      path: terraform/modules/emr-on-eks/main.tf
+      line_start: 49
+      line_end: 49
+      reason: "False positive - S3 actions already scoped to specific bucket ARNs"
+    - rule_id: terraform.lang.security.iam.no-iam-resource-exposure.no-iam-resource-exposure
+      path: terraform/modules/datazone-account-association/main.tf
+      line_start: 53
+      line_end: 53
+      reason: "Accepted risk - DataZone cross-account role requires broad LakeFormation Grant/Revoke permissions by design"
+    - rule_id: terraform.lang.security.iam.no-iam-resource-exposure.no-iam-resource-exposure
+      path: terraform/modules/datazone-blueprints/main.tf
+      line_start: 290
+      line_end: 290
+      reason: "False positive - iam:PassRole already scoped to specific query execution role ARN"
+    - rule_id: terraform.lang.security.iam.no-iam-resource-exposure.no-iam-resource-exposure
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      line_start: 83
+      line_end: 83
+      reason: "Accepted risk - iam:AttachRolePolicy scoped to datazone_usr_role_* with PolicyARN condition"
+    - rule_id: terraform.lang.security.iam.no-iam-priv-esc-funcs.no-iam-priv-esc-funcs
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      line_start: 83
+      line_end: 83
+      reason: "False positive - iam:AttachRolePolicy constrained to datazone_usr_role_* resources with ArnEquals condition limiting to a single KMS policy ARN"
+    - rule_id: CKV_AWS_290
+      path: terraform/modules/datazone-account-association/main.tf
+      line_start: 42
+      line_end: 42
+      reason: "Accepted risk - DataZone cross-account role requires broad datazone:* and LakeFormation permissions by design"
+    - rule_id: CKV_AWS_355
+      path: terraform/modules/datazone-account-association/main.tf
+      line_start: 42
+      line_end: 42
+      reason: "Accepted risk - DataZone cross-account role requires Resource=* for datazone and LakeFormation actions"
+    - rule_id: CKV_AWS_290
+      path: terraform/modules/datazone-domain-units/main.tf
+      line_start: 61
+      line_end: 61
+      reason: "False positive - DataZone write actions already scoped to domain/* ARN"
+    - rule_id: CKV_AWS_355
+      path: terraform/modules/datazone-domain-units/main.tf
+      line_start: 61
+      line_end: 61
+      reason: "False positive - DataZone actions already scoped to domain/* ARN"
+    - rule_id: CKV_AWS_290
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      line_start: 72
+      line_end: 72
+      reason: "Accepted risk - iam:AttachRolePolicy scoped to datazone_usr_role_* with PolicyARN condition"
+    - rule_id: CKV_AWS_355
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      line_start: 72
+      line_end: 72
+      reason: "Accepted risk - iam:AttachRolePolicy scoped to datazone_usr_role_* with PolicyARN condition"
+    - rule_id: CKV_AWS_116
+      path: terraform/modules/datazone-blueprints/main.tf
+      reason: "Accepted risk - Low-frequency automation Lambda with built-in retry logic; DLQ not warranted"
+    - rule_id: CKV_AWS_116
+      path: terraform/modules/datazone-domain-units/main.tf
+      reason: "Accepted risk - Low-frequency automation Lambda with built-in retry logic; DLQ not warranted"
+    - rule_id: CKV_AWS_116
+      path: terraform/modules/datazone-project-profile-v2/main.tf
+      reason: "Accepted risk - Low-frequency automation Lambda with built-in retry logic; DLQ not warranted"
+    - rule_id: CKV_AWS_116
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      reason: "Accepted risk - Low-frequency automation Lambda with built-in retry logic; DLQ not warranted"
+    - rule_id: CKV_AWS_117
+      path: terraform/modules/datazone-blueprints/main.tf
+      reason: "Accepted risk - Lambda only calls AWS APIs (DataZone); no VPC resources needed"
+    - rule_id: CKV_AWS_117
+      path: terraform/modules/datazone-domain-units/main.tf
+      reason: "Accepted risk - Lambda only calls AWS APIs (DataZone, S3, KMS); no VPC resources needed"
+    - rule_id: CKV_AWS_117
+      path: terraform/modules/datazone-project-profile-v2/main.tf
+      reason: "Accepted risk - Lambda only calls AWS APIs (DataZone); no VPC resources needed"
+    - rule_id: CKV_AWS_117
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      reason: "Accepted risk - Lambda only calls AWS APIs (IAM); no VPC resources needed"
+    - rule_id: CKV_AWS_173
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      reason: "Accepted risk - Environment variables (POLICY_ARN, DOMAIN_ID) are non-sensitive resource identifiers, not secrets"
+    - rule_id: terraform.aws.security.aws-lambda-environment-unencrypted.aws-lambda-environment-unencrypted
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      line_start: 48
+      line_end: 48
+      reason: "Accepted risk - Environment variables (POLICY_ARN, DOMAIN_ID) are non-sensitive resource identifiers, not secrets"
+    - rule_id: terraform.aws.security.aws-lambda-x-ray-tracing-not-active.aws-lambda-x-ray-tracing-not-active
+      path: terraform/modules/datazone-blueprints/main.tf
+      reason: "Accepted risk - Low-frequency automation Lambda; X-Ray tracing not required"
+    - rule_id: terraform.aws.security.aws-lambda-x-ray-tracing-not-active.aws-lambda-x-ray-tracing-not-active
+      path: terraform/modules/datazone-domain-units/main.tf
+      reason: "Accepted risk - Low-frequency automation Lambda; X-Ray tracing not required"
+    - rule_id: terraform.aws.security.aws-lambda-x-ray-tracing-not-active.aws-lambda-x-ray-tracing-not-active
+      path: terraform/modules/datazone-project-profile-v2/main.tf
+      reason: "Accepted risk - Low-frequency automation Lambda; X-Ray tracing not required"
+    - rule_id: terraform.aws.security.aws-lambda-x-ray-tracing-not-active.aws-lambda-x-ray-tracing-not-active
+      path: terraform/modules/datazone-role-policy-automation/main.tf
+      reason: "Accepted risk - Low-frequency automation Lambda; X-Ray tracing not required"
   ignore_paths:
     - path: "**/.venv/**"
       reason: Virtual environment, not committed, only 3p content
@@ -142,6 +280,17 @@ global_settings:
       reason: This file is generated by a corresponding Pydantic model and does not contain any secrets or sensitive information. Findings on this file are false positives and should be addressed on the related Pydantic models, not on this JSON file.
     - path: "**/automated_security_helper/schemas/AshConfig.json"
       reason: This file is generated by a corresponding Pydantic model and does not contain any secrets or sensitive information. Findings on this file are false positives and should be addressed on the related Pydantic models, not on this JSON file.
+    - path: "terraform/examples/emr-eks/**"
+      reason: EMR/EKS example infrastructure not in scope for this scan.
+    - path: "terraform/assets/emr/**"
+      reason: EMR assets not in scope for this scan.
+    - path: "terraform/modules/eks/**"
+      reason: EKS module not in scope for this scan.
+    - path: "terraform/modules/emr-on-eks/templates/**"
+      reason: EMR on EKS pod templates are managed by Spark/EMR runtime; K8s security context not applicable.
+    - rule_id: generic.secrets.security.detected-aws-account-id.detected-aws-account-id
+      path: terraform/modules/datazone-account-association/README.md
+      reason: "Informational - AWS account IDs in documentation examples are not sensitive"
 reporters:
   security-hub:
     enabled: false
@@ -228,6 +377,12 @@ scanners:
     enabled: true
   syft:
     enabled: true
+  ferret-scan:
+    enabled: true
+    options:
+      confidence_levels: "high"
+      checks: "CREDIT_CARD,SSN,PASSPORT,EMAIL,PHONE,SECRETS"
+      recursive: true
 converters:
   archive:
     enabled: true

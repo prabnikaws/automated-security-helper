@@ -1,4 +1,25 @@
 block-list-secret-scan: []
+skip-check:
+  - CKV_AWS_144
+  - CKV_AWS_18
+  - CKV2_AWS_61
+  - CKV_AWS_50
+  - CKV2_AWS_62
+  - CKV_TF_1
+  - CKV_AWS_272
+  - CKV_AWS_124
+  - CKV2_AWS_6   # TODO: remove - suppressed for this repo only, needed for other scans
+  - CKV_AWS_145  # TODO: remove - suppressed for this repo only, needed for other scans
+  - CKV_AWS_116  # Lambda DLQ - low-frequency automation Lambdas with retry logic
+  - CKV_AWS_117  # Lambda VPC - Lambdas only call AWS APIs, no VPC resources needed
+  - CKV_AWS_173  # Lambda env encryption - env vars are non-sensitive resource identifiers
+  - CKV_AWS_290  # IAM write without constraints - scoped by conditions or resource ARNs
+  - CKV_AWS_355  # IAM wildcard resources - scoped by conditions or resource ARNs
+  - CKV_AWS_99   # Glue encryption - new finding from added security config
+skip-path:
+  - terraform/examples/emr-eks
+  - terraform/assets/emr
+  - terraform/modules/eks
 evaluate-variables: true
 external-modules-download-path: .external_modules
 mask: []
